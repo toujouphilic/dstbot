@@ -5,26 +5,26 @@ import fetch from 'node-fetch';
 import { Client, GatewayIntentBits } from 'discord.js';
 import { XMLParser } from 'fast-xml-parser';
 
-/* ================= DISCORD ================= */
+/* ======================= DISCORD ======================= */
 const discord = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-async function sendToDiscord(content, roleId = null) {
+async function sendEmbed({ embed, roleId }) {
   const channel = await discord.channels.fetch(process.env.DISCORD_CHANNEL_ID);
   if (!channel) throw new Error("Discord channel not found");
 
   const ping = roleId ? `<@&${roleId}>` : "";
-  const allowedMentions = {
-    parse: [],
-    roles: roleId ? [roleId] : []
-  };
 
   await channel.send({
-    content: `${ping}\n${content}`.trim(),
-    allowedMentions
+    content: ping,
+    embeds: [embed],
+    allowedMentions: {
+      parse: [],
+      roles: roleId ? [roleId] : []
+    }
   });
 }
 
-/* ================= EXPRESS ================= */
+/* ======================= EXPRESS ======================= */
 const app = express();
 app.use('/twitch/eventsub', express.raw({ type: '*/*' }));
 app.use('/youtube/websub', express.raw({ type: '*/*' }));
@@ -32,7 +32,7 @@ app.use('/youtube/websub', express.raw({ type: '*/*' }));
 const PORT = process.env.PORT || 3000;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 
-/* ================= ROLE ROUTING ================= */
+/* ======================= ROLE CONFIG ======================= */
 const ROLE_REKRAP = "1451111489682411541";
 const ROLE_MISC   = "1451125072650833942";
 const ROLE_4CVIT  = "1333276977494495233";
@@ -57,7 +57,7 @@ const YT_ROLES = {
   "UCE1U91gqwuBeSyqeuSpDXlw": ROLE_ZAM
 };
 
-/* ================= TWITCH ================= */
+/* ======================= TWITCH ======================= */
 let twitchToken, twitchTokenExp = 0;
 
 async function getTwitchToken() {
@@ -89,7 +89,7 @@ async function twitchApi(path, method = 'GET', body) {
 }
 
 async function createTwitchSubs() {
-  const logins = process.env.TWITCH_BROADCASTER_LOGINS.split(',').map(s => s.toLowerCase());
+  const logins = process.env.TWITCH_BROADCASTER_LOGINS.split(',');
 
   for (const login of logins) {
     const user = await twitchApi(`/users?login=${login}`);
@@ -110,15 +110,16 @@ async function createTwitchSubs() {
 }
 
 function verifyTwitch(req) {
-  const msgId = req.header('Twitch-Eventsub-Message-Id');
-  const timestamp = req.header('Twitch-Eventsub-Message-Timestamp');
+  const id = req.header('Twitch-Eventsub-Message-Id');
+  const ts = req.header('Twitch-Eventsub-Message-Timestamp');
   const sig = req.header('Twitch-Eventsub-Message-Signature');
-  const hmac = 'sha256=' + crypto
+
+  const hash = 'sha256=' + crypto
     .createHmac('sha256', process.env.TWITCH_EVENTSUB_SECRET)
-    .update(msgId + timestamp + req.body.toString())
+    .update(id + ts + req.body.toString())
     .digest('hex');
 
-  return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(sig));
+  return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(sig));
 }
 
 app.post('/twitch/eventsub', async (req, res) => {
@@ -136,21 +137,29 @@ app.post('/twitch/eventsub', async (req, res) => {
     const login = ev.broadcaster_user_login.toLowerCase();
     const role = TWITCH_ROLES[login];
 
-    await sendToDiscord(
-      `🔴 **${ev.broadcaster_user_name} is LIVE!**\nhttps://twitch.tv/${login}`,
-      role
-    );
+    const embed = {
+      title: `🔴 ${ev.broadcaster_user_name} is LIVE!`,
+      url: `https://twitch.tv/${login}`,
+      color: 0x9146FF,
+      image: {
+        url: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-1280x720.jpg?${Date.now()}`
+      },
+      footer: { text: "Twitch" },
+      timestamp: new Date()
+    };
+
+    await sendEmbed({ embed, roleId: role });
   }
 
   res.sendStatus(200);
 });
 
-/* ================= YOUTUBE ================= */
+/* ======================= YOUTUBE ======================= */
 const parser = new XMLParser();
 
-async function subscribeYT(id) {
+async function subscribeYT(channelId) {
   const hub = 'https://pubsubhubbub.appspot.com/subscribe';
-  const topic = `https://www.youtube.com/feeds/videos.xml?channel_id=${id}`;
+  const topic = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
 
   const form = new URLSearchParams({
     'hub.mode': 'subscribe',
@@ -184,15 +193,23 @@ app.post('/youtube/websub', async (req, res) => {
   const title = entry.title;
   const role = YT_ROLES[channelId];
 
-  await sendToDiscord(
-    `📺 **New YouTube upload:** ${title}\nhttps://youtube.com/watch?v=${videoId}`,
-    role
-  );
+  const embed = {
+    title,
+    url: `https://youtube.com/watch?v=${videoId}`,
+    color: 0xFF0000,
+    image: {
+      url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+    },
+    footer: { text: "YouTube" },
+    timestamp: new Date()
+  };
+
+  await sendEmbed({ embed, roleId: role });
 
   res.sendStatus(200);
 });
 
-/* ================= START ================= */
+/* ======================= START ======================= */
 app.listen(PORT, () => console.log(`Server running on ${PORT}`));
 
 discord.once('ready', async () => {
@@ -202,4 +219,3 @@ discord.once('ready', async () => {
 });
 
 await discord.login(process.env.DISCORD_TOKEN);
-
