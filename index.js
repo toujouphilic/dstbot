@@ -26,6 +26,10 @@ async function sendEmbed({ embed, roleId }) {
 
 /* ======================= EXPRESS ======================= */
 const app = express();
+app.get('/', (req, res) => {
+  res.status(200).send('OK');
+});
+
 app.use('/twitch/eventsub', express.raw({ type: '*/*' }));
 app.use('/youtube/websub', express.raw({ type: '*/*' }));
 
@@ -219,3 +223,4 @@ discord.once('ready', async () => {
 });
 
 await discord.login(process.env.DISCORD_TOKEN);
+
