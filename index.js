@@ -35,10 +35,8 @@ async function sendEmbed({ embed, roleId }) {
 
 /* ======================= EXPRESS ======================= */
 const app = express();
-app.use('/twitch/eventsub', express.raw({ type: '*/*' }));
-app.use('/youtube/websub', express.raw({ type: '*/*' }));
 
-// Health check (for Render + UptimeRobot)
+// Health check (Render / UptimeRobot)
 app.get('/', (req, res) => {
   res.status(200).send('OK');
 });
@@ -62,6 +60,13 @@ const TWITCH_ROLES = {
   princezam: ROLE_ZAM
 };
 
+const YT_ROLES = {
+  "UCvt0HYxX34vUvqu66HLXeUw": ROLE_REKRAP, // rekrap2
+  "UCupOeAF8co65kZ-N6zoVxmw": ROLE_REKRAP, // rekrap1
+  "UCBChThUUh1ckdJoQX6VRrZw": ROLE_4CVIT,  // 4cvit
+  "UCE1U91gqwuBeSyqeuSpDXlw": ROLE_ZAM     // princezam
+};
+
 /* ======================= TWITCH API ======================= */
 let twitchToken, twitchTokenExp = 0;
 
@@ -79,12 +84,14 @@ async function getTwitchToken() {
   return twitchToken;
 }
 
-async function twitchApi(path) {
+async function twitchApi(path, options = {}) {
   const token = await getTwitchToken();
   const res = await fetch(`https://api.twitch.tv/helix${path}`, {
+    ...options,
     headers: {
       'Client-ID': process.env.TWITCH_CLIENT_ID,
-      'Authorization': `Bearer ${token}`
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
     }
   });
   return res.json();
@@ -144,55 +151,58 @@ function verifyTwitch(req) {
 }
 
 /* ======================= TWITCH WEBHOOK ======================= */
-app.post('/twitch/eventsub', async (req, res) => {
-  if (!verifyTwitch(req)) return res.sendStatus(403);
+app.post(
+  '/twitch/eventsub',
+  express.raw({ type: '*/*' }),
+  async (req, res) => {
+    if (!verifyTwitch(req)) return res.sendStatus(403);
 
-  const body = JSON.parse(req.body.toString());
-  const type = req.header('Twitch-Eventsub-Message-Type');
+    const body = JSON.parse(req.body.toString());
+    const type = req.header('Twitch-Eventsub-Message-Type');
 
-  if (type === 'webhook_callback_verification') {
-    return res.send(body.challenge);
+    if (type === 'webhook_callback_verification') {
+      return res.send(body.challenge);
+    }
+
+    if (type === 'notification') {
+      const ev = body.event;
+      const login = ev.broadcaster_user_login.toLowerCase();
+      const role = TWITCH_ROLES[login];
+
+      const stream = await getStreamInfo(ev.broadcaster_user_id);
+      const user = await getUserInfo(ev.broadcaster_user_id);
+      const game = await getGameName(stream?.game_id);
+
+      const embed = {
+        author: {
+          name: `${ev.broadcaster_user_name} is now live on Twitch!`,
+          icon_url: user?.profile_image_url,
+          url: `https://twitch.tv/${login}`
+        },
+        title: stream?.title ?? "Now Live!",
+        url: `https://twitch.tv/${login}`,
+        color: 0x9146FF,
+        fields: [
+          { name: "Game", value: game, inline: true },
+          { name: "Viewers", value: `${stream?.viewer_count ?? 0}`, inline: true }
+        ],
+        image: {
+          url: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-1280x720.jpg?${Date.now()}`
+        },
+        footer: { text: "Twitch" },
+        timestamp: new Date()
+      };
+
+      await sendEmbed({ embed, roleId: role });
+    }
+
+    res.sendStatus(200);
   }
-
-  if (type === 'notification') {
-    const ev = body.event;
-    const login = ev.broadcaster_user_login.toLowerCase();
-    const role = TWITCH_ROLES[login];
-
-    const stream = await getStreamInfo(ev.broadcaster_user_id);
-    const user = await getUserInfo(ev.broadcaster_user_id);
-    const game = await getGameName(stream?.game_id);
-
-    const embed = {
-      author: {
-        name: `${ev.broadcaster_user_name} is now live on Twitch!`,
-        icon_url: user?.profile_image_url,
-        url: `https://twitch.tv/${login}`
-      },
-      title: stream?.title ?? "Now Live!",
-      url: `https://twitch.tv/${login}`,
-      color: 0x9146FF,
-      fields: [
-        { name: "Game", value: game, inline: true },
-        { name: "Viewers", value: `${stream?.viewer_count ?? 0}`, inline: true }
-      ],
-      image: {
-        url: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-1280x720.jpg?${Date.now()}`
-      },
-      footer: { text: "Twitch" },
-      timestamp: new Date()
-    };
-
-    await sendEmbed({ embed, roleId: role });
-  }
-
-  res.sendStatus(200);
-});
+);
 
 /* ======================= YOUTUBE ======================= */
 const parser = new XMLParser();
 
-// Subscribe to one YouTube channel
 async function subscribeYT(channelId) {
   const hub = 'https://pubsubhubbub.appspot.com/subscribe';
   const topic = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
@@ -205,11 +215,10 @@ async function subscribeYT(channelId) {
     'hub.secret': process.env.YOUTUBE_CALLBACK_SECRET
   });
 
-  console.log("Subscribing to YouTube channel:", channelId);
+  console.log("Subscribing to YouTube:", channelId);
   await fetch(hub, { method: 'POST', body: form });
 }
 
-// Subscribe to all channels on startup
 async function subscribeAllYT() {
   const ids = process.env.YOUTUBE_CHANNEL_IDS.split(',');
   for (const id of ids) {
@@ -217,54 +226,48 @@ async function subscribeAllYT() {
   }
 }
 
-// Verification endpoint (THIS IS REQUIRED)
+// Verification endpoint
 app.get('/youtube/websub', (req, res) => {
   if (req.query['hub.challenge']) {
-    console.log("YouTube verification received");
     return res.status(200).send(req.query['hub.challenge']);
   }
   res.sendStatus(404);
 });
 
 // Notification endpoint
-app.post('/youtube/websub', async (req, res) => {
-  const feed = parser.parse(req.body.toString());
-  const entry = feed?.feed?.entry;
+app.post(
+  '/youtube/websub',
+  express.raw({ type: '*/*' }),
+  async (req, res) => {
+    const feed = parser.parse(req.body.toString());
+    const entry = feed?.feed?.entry;
+    if (!entry) return res.sendStatus(200);
 
-  if (!entry) return res.sendStatus(200);
+    const videoId = entry['yt:videoId'];
+    const channelId = entry['yt:channelId'];
+    const title = entry.title;
+    const role = YT_ROLES[channelId];
 
-  const videoId = entry['yt:videoId'];
-  const channelId = entry['yt:channelId'];
-  const title = entry.title;
+    const embed = {
+      title,
+      url: `https://youtube.com/watch?v=${videoId}`,
+      color: 0xFF0000,
+      image: {
+        url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+      },
+      footer: { text: "YouTube" },
+      timestamp: new Date()
+    };
 
-  // Match channel to role
-  const YT_ROLES = {
-    "UCvt0HYxX34vUvqu66HLXeUw": ROLE_REKRAP, // rekrap2
-    "UCupOeAF8co65kZ-N6zoVxmw": ROLE_REKRAP, // rekrap1
-    "UCBChThUUh1ckdJoQX6VRrZw": ROLE_4CVIT,  // 4cvit
-    "UCE1U91gqwuBeSyqeuSpDXlw": ROLE_ZAM     // princezam
-  };
-
-  const role = YT_ROLES[channelId];
-
-  const embed = {
-    title,
-    url: `https://youtube.com/watch?v=${videoId}`,
-    color: 0xFF0000,
-    image: {
-      url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
-    },
-    footer: { text: "YouTube" },
-    timestamp: new Date()
-  };
-
-  await sendEmbed({ embed, roleId: role });
-  res.sendStatus(200);
-});
-
+    await sendEmbed({ embed, roleId: role });
+    res.sendStatus(200);
+  }
+);
 
 /* ======================= START ======================= */
-app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
 
 discord.once('ready', async () => {
   console.log(`Logged in as ${discord.user.tag}`);
@@ -273,4 +276,3 @@ discord.once('ready', async () => {
 });
 
 await discord.login(process.env.DISCORD_TOKEN);
-
