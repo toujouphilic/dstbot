@@ -189,12 +189,88 @@ app.post('/twitch/eventsub', async (req, res) => {
   res.sendStatus(200);
 });
 
+/* ======================= YOUTUBE ======================= */
+const parser = new XMLParser();
+
+// Subscribe to one YouTube channel
+async function subscribeYT(channelId) {
+  const hub = 'https://pubsubhubbub.appspot.com/subscribe';
+  const topic = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+
+  const form = new URLSearchParams({
+    'hub.mode': 'subscribe',
+    'hub.topic': topic,
+    'hub.callback': `${PUBLIC_BASE_URL}/youtube/websub`,
+    'hub.verify': 'async',
+    'hub.secret': process.env.YOUTUBE_CALLBACK_SECRET
+  });
+
+  console.log("Subscribing to YouTube channel:", channelId);
+  await fetch(hub, { method: 'POST', body: form });
+}
+
+// Subscribe to all channels on startup
+async function subscribeAllYT() {
+  const ids = process.env.YOUTUBE_CHANNEL_IDS.split(',');
+  for (const id of ids) {
+    await subscribeYT(id);
+  }
+}
+
+// Verification endpoint (THIS IS REQUIRED)
+app.get('/youtube/websub', (req, res) => {
+  if (req.query['hub.challenge']) {
+    console.log("YouTube verification received");
+    return res.status(200).send(req.query['hub.challenge']);
+  }
+  res.sendStatus(404);
+});
+
+// Notification endpoint
+app.post('/youtube/websub', async (req, res) => {
+  const feed = parser.parse(req.body.toString());
+  const entry = feed?.feed?.entry;
+
+  if (!entry) return res.sendStatus(200);
+
+  const videoId = entry['yt:videoId'];
+  const channelId = entry['yt:channelId'];
+  const title = entry.title;
+
+  // Match channel to role
+  const YT_ROLES = {
+    "UCvt0HYxX34vUvqu66HLXeUw": ROLE_REKRAP, // rekrap2
+    "UCupOeAF8co65kZ-N6zoVxmw": ROLE_REKRAP, // rekrap1
+    "UCBChThUUh1ckdJoQX6VRrZw": ROLE_4CVIT,  // 4cvit
+    "UCE1U91gqwuBeSyqeuSpDXlw": ROLE_ZAM     // princezam
+  };
+
+  const role = YT_ROLES[channelId];
+
+  const embed = {
+    title,
+    url: `https://youtube.com/watch?v=${videoId}`,
+    color: 0xFF0000,
+    image: {
+      url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+    },
+    footer: { text: "YouTube" },
+    timestamp: new Date()
+  };
+
+  await sendEmbed({ embed, roleId: role });
+  res.sendStatus(200);
+});
+
+
 /* ======================= START ======================= */
 app.listen(PORT, () => console.log(`Server running on ${PORT}`));
 
 discord.once('ready', async () => {
   console.log(`Logged in as ${discord.user.tag}`);
   await createTwitchSubs();
+  await subscribeAllYT();
 });
 
 await discord.login(process.env.DISCORD_TOKEN);
+
