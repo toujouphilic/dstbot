@@ -1,31 +1,33 @@
 import sqlite3 from 'sqlite3';
 import fs from 'fs';
 
-/*
-  use render persistent disk if available,
-  otherwise fall back to local file
-*/
-const DB_PATH = process.env.RENDER
-  ? '/data/notif.db'
-  : './notif.db';
+const DB_PATH = process.env.RENDER ? '/data/notif.db' : './notif.db';
 
-/* ensure render disk directory exists */
 if (process.env.RENDER && !fs.existsSync('/data')) {
   fs.mkdirSync('/data');
 }
 
 export const db = new sqlite3.Database(DB_PATH, (err) => {
-  if (err) {
-    console.error('failed to open database:', err);
-  } else {
-    console.log('database opened at', DB_PATH);
-  }
+  if (err) console.error('failed to open database:', err);
+  else console.log('database opened at', DB_PATH);
 });
 
-/* create tables */
-db.serialize(() => {
+function tryAlter(sql) {
+  db.run(sql, (err) => {
+    // ignore "duplicate column name" or similar migration errors
+    if (err) {
+      const msg = String(err.message || '');
+      if (
+        msg.includes('duplicate column') ||
+        msg.includes('already exists') ||
+        msg.includes('no such table')
+      ) return;
+      console.error('migration error:', err.message);
+    }
+  });
+}
 
-  /* servers */
+db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS servers (
       server_id TEXT PRIMARY KEY,
@@ -34,7 +36,6 @@ db.serialize(() => {
     )
   `);
 
-  /* notifications */
   db.run(`
     CREATE TABLE IF NOT EXISTS notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +49,6 @@ db.serialize(() => {
     )
   `);
 
-  /* role permissions */
   db.run(`
     CREATE TABLE IF NOT EXISTS notif_roles (
       server_id TEXT NOT NULL,
@@ -56,4 +56,9 @@ db.serialize(() => {
       PRIMARY KEY (server_id, role_id)
     )
   `);
+
+  // migrations for older dbs (safe to run every boot)
+  tryAlter(`ALTER TABLE notifications ADD COLUMN name TEXT`);
+  tryAlter(`ALTER TABLE notifications ADD COLUMN enabled INTEGER DEFAULT 1`);
+  tryAlter(`ALTER TABLE notifications ADD COLUMN role_id TEXT`);
 });
