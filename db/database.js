@@ -26,12 +26,12 @@ export const db = new sqlite3.Database(DB_PATH, (err) => {
 
 db.serialize(() => {
   db.run(`
-    CREATE TABLE IF NOT EXISTS servers (
-      server_id TEXT PRIMARY KEY,
-      server_name TEXT NOT NULL,
-      default_channel_id TEXT
-    )
-  `);
+  CREATE TABLE IF NOT EXISTS notif_roles (
+    server_id TEXT NOT NULL,
+    role_id TEXT NOT NULL,
+    PRIMARY KEY (server_id, role_id)
+  )
+`);
 
   db.run(`
     CREATE TABLE IF NOT EXISTS notifications (
