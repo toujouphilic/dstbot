@@ -72,6 +72,7 @@ export async function pollTwitch(client) {
       const stream = await checkStreamer(n.source);
 
       if (!stream) {
+        console.log(`🚨 sending twitch notif for ${n.source}`);
         await dbRun(
           `update notifications set last_state = null where id = ?`,
           [n.id]
