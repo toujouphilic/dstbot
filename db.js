@@ -1,9 +1,13 @@
 import sqlite3 from 'sqlite3';
 import fs from 'fs';
 
-const DB_PATH = process.env.RENDER
-  ? '/data/notif.db'
-  : './notif.db';
+let DB_PATH = './notif.db';
+
+if (process.env.RENDER) {
+  DB_PATH = fs.existsSync('/data')
+    ? '/data/notif.db'
+    : '/tmp/notif.db';
+}
 
 if (process.env.RENDER && !fs.existsSync('/data')) {
   fs.mkdirSync('/data');
