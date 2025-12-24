@@ -47,6 +47,7 @@ export default {
     .setName('notif')
     .setDescription('manage notifications')
 
+    /* setup */
     .addSubcommand(s =>
       s.setName('setup')
         .setDescription('set default notification channel')
@@ -55,6 +56,7 @@ export default {
             .setDescription('default channel')
             .setRequired(true)))
 
+    /* add */
     .addSubcommand(s =>
       s.setName('add')
         .setDescription('add a notification')
@@ -80,6 +82,7 @@ export default {
           o.setName('role')
             .setDescription('role to ping')))
 
+    /* edit */
     .addSubcommand(s =>
       s.setName('edit')
         .setDescription('edit a notification')
@@ -89,12 +92,14 @@ export default {
             .setRequired(true))
         .addStringOption(o =>
           o.setName('name')
-            .setDescription('new name (optional)')))
+            .setDescription('new name')))
 
+    /* list */
     .addSubcommand(s =>
       s.setName('list')
         .setDescription('list notifications'))
 
+    /* enable / disable */
     .addSubcommand(s =>
       s.setName('enable')
         .setDescription('enable a notification')
@@ -111,6 +116,7 @@ export default {
             .setDescription('notification id')
             .setRequired(true)))
 
+    /* remove */
     .addSubcommand(s =>
       s.setName('remove')
         .setDescription('remove a notification')
@@ -119,6 +125,7 @@ export default {
             .setDescription('notification id')
             .setRequired(true)))
 
+    /* test */
     .addSubcommand(s =>
       s.setName('test')
         .setDescription('send a test notification')
@@ -129,6 +136,23 @@ export default {
         .addChannelOption(o =>
           o.setName('channel')
             .setDescription('channel to send test to')
+            .setRequired(true)))
+
+    /* role permissions */
+    .addSubcommand(s =>
+      s.setName('addrole')
+        .setDescription('allow a role to manage notif commands')
+        .addRoleOption(o =>
+          o.setName('role')
+            .setDescription('role to allow')
+            .setRequired(true)))
+
+    .addSubcommand(s =>
+      s.setName('removerole')
+        .setDescription('remove a role from notif permissions')
+        .addRoleOption(o =>
+          o.setName('role')
+            .setDescription('role to remove')
             .setRequired(true))),
 
   async execute(interaction) {
@@ -142,7 +166,7 @@ export default {
     const sub = interaction.options.getSubcommand();
     const guildId = interaction.guildId;
 
-    /* SETUP (public) */
+    /* setup is public */
     if (sub === 'setup') {
       const channel = interaction.options.getChannel('channel');
 
@@ -156,6 +180,35 @@ export default {
       return interaction.reply(
         `notifications set up in <#${channel.id}>`
       );
+    }
+
+    /* role management = admin only */
+    if (sub === 'addrole' || sub === 'removerole') {
+      if (!interaction.memberPermissions.has('Administrator')) {
+        return interaction.reply({
+          content: 'only administrators can manage notif roles',
+          ephemeral: true
+        });
+      }
+
+      const role = interaction.options.getRole('role');
+
+      if (sub === 'addrole') {
+        await dbRun(
+          `insert or ignore into notif_roles (server_id, role_id)
+           values (?, ?)`,
+          [guildId, role.id]
+        );
+        return interaction.reply(`role <@&${role.id}> can now manage notifications`);
+      }
+
+      if (sub === 'removerole') {
+        await dbRun(
+          `delete from notif_roles where server_id = ? and role_id = ?`,
+          [guildId, role.id]
+        );
+        return interaction.reply(`role <@&${role.id}> removed from notif permissions`);
+      }
     }
 
     /* permission gate */
@@ -206,20 +259,6 @@ export default {
       );
     }
 
-    /* EDIT */
-    if (sub === 'edit') {
-      const id = interaction.options.getInteger('id');
-      const name = interaction.options.getString('name');
-
-      await dbRun(
-        `update notifications set name = ?
-         where id = ? and server_id = ?`,
-        [name ?? null, id, guildId]
-      );
-
-      return interaction.reply('notification updated');
-    }
-
     /* LIST */
     if (sub === 'list') {
       const rows = await dbAll(
@@ -247,12 +286,10 @@ export default {
 
     /* ENABLE / DISABLE */
     if (sub === 'enable' || sub === 'disable') {
-      const id = interaction.options.getInteger('id');
-
       await dbRun(
         `update notifications set enabled = ?
          where id = ? and server_id = ?`,
-        [sub === 'enable' ? 1 : 0, id, guildId]
+        [sub === 'enable' ? 1 : 0, interaction.options.getInteger('id'), guildId]
       );
 
       return interaction.reply(
@@ -262,13 +299,10 @@ export default {
 
     /* REMOVE */
     if (sub === 'remove') {
-      const id = interaction.options.getInteger('id');
-
       await dbRun(
         `delete from notifications where id = ? and server_id = ?`,
-        [id, guildId]
+        [interaction.options.getInteger('id'), guildId]
       );
-
       return interaction.reply('notification removed');
     }
 
@@ -282,9 +316,7 @@ export default {
         [id, guildId]
       );
 
-      if (!notif) {
-        return interaction.reply('notification not found');
-      }
+      if (!notif) return interaction.reply('notification not found');
 
       if (notif.type === 'twitch') {
         await sendTwitchLiveEmbed(interaction.client, {
