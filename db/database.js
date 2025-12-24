@@ -1,11 +1,15 @@
 import sqlite3 from 'sqlite3';
 import fs from 'fs';
 
+/*
+  use render persistent disk if available,
+  otherwise fall back to local file
+*/
 const DB_PATH = process.env.RENDER
   ? '/data/notif.db'
   : './notif.db';
 
-// ensure /data exists on render
+/* ensure render disk directory exists */
 if (process.env.RENDER && !fs.existsSync('/data')) {
   fs.mkdirSync('/data');
 }
@@ -18,8 +22,10 @@ export const db = new sqlite3.Database(DB_PATH, (err) => {
   }
 });
 
+/* create tables */
 db.serialize(() => {
-  // servers table
+
+  /* servers */
   db.run(`
     CREATE TABLE IF NOT EXISTS servers (
       server_id TEXT PRIMARY KEY,
@@ -28,20 +34,21 @@ db.serialize(() => {
     )
   `);
 
-  // notifications table
+  /* notifications */
   db.run(`
     CREATE TABLE IF NOT EXISTS notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      server_id TEXT,
-      type TEXT,
-      source TEXT,
-      channel_id TEXT,
+      server_id TEXT NOT NULL,
+      name TEXT,
+      type TEXT NOT NULL,
+      source TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
       role_id TEXT,
       enabled INTEGER DEFAULT 1
     )
   `);
 
-  // notif roles table
+  /* role permissions */
   db.run(`
     CREATE TABLE IF NOT EXISTS notif_roles (
       server_id TEXT NOT NULL,
