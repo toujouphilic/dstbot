@@ -79,8 +79,10 @@ export async function pollTwitch(client) {
         continue;
       }
 
-      if (n.last_state === stream.id) continue;
-
+      if (n.last_state && n.last_state === stream.id) {
+  console.log(`⏭ already notified for ${n.source}`);
+  continue;
+}
       await sendTwitchLiveEmbed(client, {
         channelId: n.channel_id,
         roleId: n.role_id,
