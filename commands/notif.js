@@ -55,30 +55,38 @@ export default {
 
     /* add */
     .addSubcommand(s =>
-      s.setName('add')
-        .setDescription('add a notification')
-        .addStringOption(o =>
-          o.setName('name')
-            .setDescription('optional name for this notification'))
-        .addStringOption(o =>
-          o.setName('type')
-            .setDescription('notification type')
-            .setRequired(true)
-            .addChoices(
-              { name: 'twitch', value: 'twitch' },
-              { name: 'youtube', value: 'youtube' }
-            ))
-        .addStringOption(o =>
-          o.setName('from')
-            .setDescription('source id')
-            .setRequired(true))
-        .addChannelOption(o =>
-          o.setName('channel')
-            .setDescription('optional override channel'))
-        .addRoleOption(o =>
-          o.setName('role')
-            .setDescription('optional role ping')))
-
+  s.setName('add')
+    .setDescription('add a notification')
+    .addStringOption(o =>
+      o.setName('type')
+        .setDescription('notification type')
+        .setRequired(true)
+        .addChoices(
+          { name: 'youtube', value: 'youtube' },
+          { name: 'twitch', value: 'twitch' }
+        )
+    )
+    .addStringOption(o =>
+      o.setName('from')
+        .setDescription('youtube channel id or twitch username')
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName('name')
+        .setDescription('optional name for this notification')
+        .setRequired(false)
+    )
+    .addChannelOption(o =>
+      o.setName('channel')
+        .setDescription('override channel (defaults to setup channel)')
+        .setRequired(false)
+    )
+    .addRoleOption(o =>
+      o.setName('role')
+        .setDescription('role to ping')
+        .setRequired(false)
+    )
+)
     /* edit (name only) */
     .addSubcommand(s =>
       s.setName('edit')
