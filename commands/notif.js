@@ -35,6 +35,10 @@ export default {
             .setRequired(true)))
 
     .addSubcommand(s =>
+      s.setName('reload')
+        .setDescription('reload notif system'))
+
+    .addSubcommand(s =>
       s.setName('help')
         .setDescription('show notif commands'))
 
@@ -127,32 +131,32 @@ export default {
       });
     }
 
+    /* IMPORTANT: prevent timeouts */
+    await interaction.deferReply({ ephemeral: true });
+
     const sub = interaction.options.getSubcommand();
+    const guildId = interaction.guildId;
 
     /* admin-only role management */
-    if (['addrole', 'removerole'].includes(sub) &&
+    if (['addrole', 'removerole', 'reload'].includes(sub) &&
         !interaction.memberPermissions.has('Administrator')) {
-      return interaction.reply({
-        content: 'only administrators can manage notif roles',
-        ephemeral: true
-      });
+      return interaction.editReply('only administrators can manage notif roles');
     }
 
     /* general permission check */
     if (!(await hasNotifPermission(interaction))) {
-      return interaction.reply({
-        content: 'you do not have permission to use this command',
-        ephemeral: true
-      });
+      return interaction.editReply('you do not have permission to use this command');
     }
 
-    const guildId = interaction.guildId;
+    /* reload */
+    if (sub === 'reload') {
+      db.serialize(() => db.run(`select 1`));
+      return interaction.editReply('notif system reloaded');
+    }
 
     /* help */
     if (sub === 'help') {
-      return interaction.reply({
-        ephemeral: true,
-        content: `
+      return interaction.editReply(`
 /notif setup
 /notif add
 /notif edit
@@ -162,8 +166,8 @@ export default {
 /notif list
 /notif addrole
 /notif removerole
-        `.trim()
-      });
+/notif reload
+      `.trim());
     }
 
     /* setup */
@@ -177,10 +181,7 @@ export default {
         [guildId, interaction.guild.name, channel.id]
       );
 
-      return interaction.reply({
-        content: 'notification setup complete',
-        ephemeral: true
-      });
+      return interaction.editReply('notification setup complete');
     }
 
     /* ensure server exists */
@@ -189,13 +190,12 @@ export default {
       [guildId],
       (err, server) => {
         if (!server) {
-          return interaction.reply({
-            content: 'this server is not set up yet. run /notif setup first',
-            ephemeral: true
-          });
+          return interaction.editReply(
+            'this server is not set up yet. run /notif setup first'
+          );
         }
 
-        /* add notification */
+        /* add */
         if (sub === 'add') {
           db.run(
             `insert into notifications
@@ -210,13 +210,10 @@ export default {
             ]
           );
 
-          return interaction.reply({
-            content: 'notification added',
-            ephemeral: true
-          });
+          return interaction.editReply('notification added');
         }
 
-        /* edit notification */
+        /* edit */
         if (sub === 'edit') {
           const id = interaction.options.getInteger('id');
           const channel = interaction.options.getChannel('channel');
@@ -227,10 +224,7 @@ export default {
             [id, guildId],
             (err, notif) => {
               if (!notif) {
-                return interaction.reply({
-                  content: 'notification not found',
-                  ephemeral: true
-                });
+                return interaction.editReply('notification not found');
               }
 
               if (channel) {
@@ -247,10 +241,7 @@ export default {
                 );
               }
 
-              return interaction.reply({
-                content: 'notification updated',
-                ephemeral: true
-              });
+              return interaction.editReply('notification updated');
             }
           );
         }
@@ -267,10 +258,9 @@ export default {
             ]
           );
 
-          return interaction.reply({
-            content: `notification ${sub === 'enable' ? 'enabled' : 'disabled'}`,
-            ephemeral: true
-          });
+          return interaction.editReply(
+            `notification ${sub === 'enable' ? 'enabled' : 'disabled'}`
+          );
         }
 
         /* remove */
@@ -280,10 +270,7 @@ export default {
             [interaction.options.getInteger('id'), guildId]
           );
 
-          return interaction.reply({
-            content: 'notification removed',
-            ephemeral: true
-          });
+          return interaction.editReply('notification removed');
         }
 
         /* list */
@@ -293,20 +280,16 @@ export default {
             [guildId],
             (err, rows) => {
               if (!rows.length) {
-                return interaction.reply({
-                  content: 'no notifications configured for this server',
-                  ephemeral: true
-                });
+                return interaction.editReply(
+                  'no notifications configured for this server'
+                );
               }
 
               const lines = rows.map(n =>
                 `id ${n.id} | ${n.type} | ${n.source} -> <#${n.channel_id}> | ${n.enabled ? 'enabled' : 'disabled'}`
               );
 
-              interaction.reply({
-                content: lines.join('\n'),
-                ephemeral: true
-              });
+              interaction.editReply(lines.join('\n'));
             }
           );
         }
@@ -321,10 +304,9 @@ export default {
             [guildId, role.id]
           );
 
-          return interaction.reply({
-            content: `role ${role.name} can now manage notif commands`,
-            ephemeral: true
-          });
+          return interaction.editReply(
+            `role ${role.name} can now manage notif commands`
+          );
         }
 
         /* removerole */
@@ -336,10 +318,9 @@ export default {
             [guildId, role.id]
           );
 
-          return interaction.reply({
-            content: `role ${role.name} can no longer manage notif commands`,
-            ephemeral: true
-          });
+          return interaction.editReply(
+            `role ${role.name} can no longer manage notif commands`
+          );
         }
       }
     );
