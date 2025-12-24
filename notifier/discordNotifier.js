@@ -1,5 +1,7 @@
 import { EmbedBuilder } from 'discord.js';
 
+/* ================= TWITCH ================= */
+
 export async function sendTwitchLiveEmbed(client, {
   channelId,
   roleId,
@@ -17,7 +19,7 @@ export async function sendTwitchLiveEmbed(client, {
   const embed = new EmbedBuilder()
     .setAuthor({
       name: `${streamerName} is now live on Twitch!`,
-      iconURL: profileImage,
+      iconURL: profileImage ?? undefined,
       url: streamUrl
     })
     .setTitle(streamTitle)
@@ -25,7 +27,7 @@ export async function sendTwitchLiveEmbed(client, {
     .setColor(0x9146FF)
     .addFields(
       { name: 'Game', value: game || 'Unknown', inline: true },
-      { name: 'Viewers', value: `${viewers ?? 0}`, inline: true }
+      { name: 'Viewers', value: String(viewers ?? 0), inline: true }
     )
     .setImage(previewImage)
     .setFooter({ text: 'Twitch' })
@@ -34,16 +36,16 @@ export async function sendTwitchLiveEmbed(client, {
   await channel.send({
     content: roleId ? `<@&${roleId}>` : null,
     embeds: [embed],
-    allowedMentions: {
-      parse: [],
-      roles: roleId ? [roleId] : []
-    }
+    allowedMentions: { roles: roleId ? [roleId] : [] }
   });
 }
+
+/* ================= YOUTUBE ================= */
 
 export async function sendYouTubeUploadEmbed(client, {
   channelId,
   roleId,
+  channelName,
   title,
   videoUrl,
   thumbnail
@@ -52,6 +54,10 @@ export async function sendYouTubeUploadEmbed(client, {
   if (!channel) return;
 
   const embed = new EmbedBuilder()
+    .setAuthor({
+      name: `${channelName} uploaded a new video!`,
+      url: videoUrl
+    })
     .setTitle(title)
     .setURL(videoUrl)
     .setColor(0xFF0000)
@@ -62,9 +68,6 @@ export async function sendYouTubeUploadEmbed(client, {
   await channel.send({
     content: roleId ? `<@&${roleId}>` : null,
     embeds: [embed],
-    allowedMentions: {
-      parse: [],
-      roles: roleId ? [roleId] : []
-    }
+    allowedMentions: { roles: roleId ? [roleId] : [] }
   });
 }
