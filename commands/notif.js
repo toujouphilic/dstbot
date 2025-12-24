@@ -1,22 +1,22 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { db } from '../db/database.js';
 
-/* promise helpers */
+/* sqlite promise helpers */
 function dbRun(sql, params = []) {
   return new Promise((resolve, reject) => {
-    db.run(sql, params, err => err ? reject(err) : resolve());
+    db.run(sql, params, err => (err ? reject(err) : resolve()));
   });
 }
 
 function dbGet(sql, params = []) {
   return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => err ? reject(err) : resolve(row));
+    db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
   });
 }
 
 function dbAll(sql, params = []) {
   return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows));
+    db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
   });
 }
 
@@ -29,8 +29,8 @@ async function hasNotifPermission(interaction) {
     [interaction.guildId]
   );
 
-  return interaction.member.roles.cache.some(r =>
-    rows.some(row => row.role_id === r.id)
+  return interaction.member.roles.cache.some(role =>
+    rows.some(row => row.role_id === role.id)
   );
 }
 
@@ -44,12 +44,28 @@ export default {
         .setDescription('initialize notifications')
         .addChannelOption(o =>
           o.setName('channel')
-            .setDescription('default channel')
+            .setDescription('default notification channel')
             .setRequired(true)))
 
     .addSubcommand(s =>
       s.setName('help')
-        .setDescription('show notif commands')),
+        .setDescription('show notif commands'))
+
+    .addSubcommand(s =>
+      s.setName('addrole')
+        .setDescription('allow a role to manage notif commands')
+        .addRoleOption(o =>
+          o.setName('role')
+            .setDescription('role to allow')
+            .setRequired(true)))
+
+    .addSubcommand(s =>
+      s.setName('removerole')
+        .setDescription('remove a role from notif permissions')
+        .addRoleOption(o =>
+          o.setName('role')
+            .setDescription('role to remove')
+            .setRequired(true))),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
@@ -65,18 +81,7 @@ export default {
       const sub = interaction.options.getSubcommand();
       const guildId = interaction.guildId;
 
-      if (!(await hasNotifPermission(interaction))) {
-        return interaction.editReply(
-          'you do not have permission to use this command'
-        );
-      }
-
-      if (sub === 'help') {
-        return interaction.editReply(
-          '/notif setup\n/notif help'
-        );
-      }
-
+      /* 🔑 setup MUST bypass permissions */
       if (sub === 'setup') {
         const channel = interaction.options.getChannel('channel');
 
@@ -91,8 +96,52 @@ export default {
           ]
         );
 
+        return interaction.editReply('notification setup complete');
+      }
+
+      /* everything else requires permission */
+      if (!(await hasNotifPermission(interaction))) {
         return interaction.editReply(
-          'notification setup complete'
+          'you do not have permission to use this command'
+        );
+      }
+
+      /* help */
+      if (sub === 'help') {
+        return interaction.editReply(`
+/notif setup
+/notif help
+/notif addrole
+/notif removerole
+        `.trim());
+      }
+
+      /* addrole */
+      if (sub === 'addrole') {
+        const role = interaction.options.getRole('role');
+
+        await dbRun(
+          `insert or ignore into notif_roles (server_id, role_id)
+           values (?, ?)`,
+          [guildId, role.id]
+        );
+
+        return interaction.editReply(
+          `role ${role.name} can now manage notif commands`
+        );
+      }
+
+      /* removerole */
+      if (sub === 'removerole') {
+        const role = interaction.options.getRole('role');
+
+        await dbRun(
+          `delete from notif_roles where server_id = ? and role_id = ?`,
+          [guildId, role.id]
+        );
+
+        return interaction.editReply(
+          `role ${role.name} can no longer manage notif commands`
         );
       }
 
@@ -100,10 +149,9 @@ export default {
 
     } catch (err) {
       console.error('notif command error:', err);
-
       return interaction.editReply(
         'an internal error occurred while running this command'
       );
     }
   }
-}; 
+};
