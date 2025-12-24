@@ -48,116 +48,220 @@ export default {
     .setDescription('manage notifications')
 
     /* setup */
-    .addSubcommand(s =>
-      s.setName('setup')
-        .setDescription('initialize notifications')
-        .addChannelOption(o =>
-          o.setName('channel')
-            .setDescription('default notification channel')
-            .setRequired(true)))
-
-    /* help */
-    .addSubcommand(s =>
-      s.setName('help')
-        .setDescription('show notif commands'))
+    .addSubcommand(sub =>
+      sub
+        .setName('setup')
+        .setDescription('set the default notification channel')
+        .addChannelOption(opt =>
+          opt
+            .setName('channel')
+            .setDescription('channel to send notifications in')
+            .setRequired(true)
+        )
+    )
 
     /* add */
-    .addSubcommand(s =>
-      s.setName('add')
+    .addSubcommand(sub =>
+      sub
+        .setName('add')
         .setDescription('add a notification')
-        .addStringOption(o =>
-          o.setName('type')
+        .addStringOption(opt =>
+          opt
+            .setName('type')
             .setDescription('notification type')
             .setRequired(true)
             .addChoices(
               { name: 'twitch', value: 'twitch' },
               { name: 'youtube', value: 'youtube' }
-            ))
-        .addStringOption(o =>
-          o.setName('from')
+            )
+        )
+        .addStringOption(opt =>
+          opt
+            .setName('source')
             .setDescription('twitch username or youtube channel id')
-            .setRequired(true))
-        .addStringOption(o =>
-          o.setName('name')
-            .setDescription('optional name'))
-        .addChannelOption(o =>
-          o.setName('channel')
-            .setDescription('override channel'))
-        .addRoleOption(o =>
-          o.setName('role')
-            .setDescription('role to ping')))
-
-    /* edit */
-    .addSubcommand(s =>
-      s.setName('edit')
-        .setDescription('edit a notification')
-        .addIntegerOption(o =>
-          o.setName('id')
-            .setDescription('notification id')
-            .setRequired(true))
-        .addStringOption(o =>
-          o.setName('name')
-            .setDescription('new name')))
+            .setRequired(true)
+        )
+        .addStringOption(opt =>
+          opt
+            .setName('name')
+            .setDescription('optional display name')
+        )
+        .addChannelOption(opt =>
+          opt
+            .setName('channel')
+            .setDescription('override channel')
+        )
+        .addRoleOption(opt =>
+          opt
+            .setName('role')
+            .setDescription('role to ping')
+        )
+    )
 
     /* list */
-    .addSubcommand(s =>
-      s.setName('list')
-        .setDescription('list notifications'))
+    .addSubcommand(sub =>
+      sub
+        .setName('list')
+        .setDescription('list notifications')
+    )
 
-    /* enable / disable */
-    .addSubcommand(s =>
-      s.setName('enable')
+    /* enable */
+    .addSubcommand(sub =>
+      sub
+        .setName('enable')
         .setDescription('enable a notification')
-        .addIntegerOption(o =>
-          o.setName('id')
+        .addIntegerOption(opt =>
+          opt
+            .setName('id')
             .setDescription('notification id')
-            .setRequired(true)))
+            .setRequired(true)
+        )
+    )
 
-    .addSubcommand(s =>
-      s.setName('disable')
+    /* disable */
+    .addSubcommand(sub =>
+      sub
+        .setName('disable')
         .setDescription('disable a notification')
-        .addIntegerOption(o =>
-          o.setName('id')
+        .addIntegerOption(opt =>
+          opt
+            .setName('id')
             .setDescription('notification id')
-            .setRequired(true)))
+            .setRequired(true)
+        )
+    )
 
     /* remove */
-    .addSubcommand(s =>
-      s.setName('remove')
+    .addSubcommand(sub =>
+      sub
+        .setName('remove')
         .setDescription('remove a notification')
-        .addIntegerOption(o =>
-          o.setName('id')
+        .addIntegerOption(opt =>
+          opt
+            .setName('id')
             .setDescription('notification id')
-            .setRequired(true)))
+            .setRequired(true)
+        )
+    )
 
     /* test */
-    .addSubcommand(s =>
-      s.setName('test')
-        .setDescription('send a test notification')
-        .addIntegerOption(o =>
-          o.setName('id')
+    .addSubcommand(sub =>
+      sub
+        .setName('test')
+        .setDescription('send a test embed')
+        .addIntegerOption(opt =>
+          opt
+            .setName('id')
             .setDescription('notification id')
-            .setRequired(true))
-        .addChannelOption(o =>
-          o.setName('channel')
+            .setRequired(true)
+        )
+        .addChannelOption(opt =>
+          opt
+            .setName('channel')
             .setDescription('channel to send test to')
-            .setRequired(true)))
+            .setRequired(true)
+        )
+    ),
 
-    /* role permissions */
-    .addSubcommand(s =>
-      s.setName('addrole')
-        .setDescription('allow a role to manage notif commands')
-        .addRoleOption(o =>
-          o.setName('role')
-            .setDescription('role to allow')
-            .setRequired(true)))
+  async execute(interaction) {
+    if (!interaction.inGuild()) {
+      return interaction.reply({
+        content: 'this command can only be used in servers',
+        ephemeral: true
+      });
+    }
 
-    .addSubcommand(s =>
-      s.setName('removerole')
-        .setDescription('remove a role from notif permissions')
-        .addRoleOption(o =>
-          o.setName('role')
-          .setDescription('role to remove')
-          .setRequired(true)
-      )
-)
+    const sub = interaction.options.getSubcommand();
+    const guildId = interaction.guildId;
+
+    /* setup is public */
+    if (sub === 'setup') {
+      const channel = interaction.options.getChannel('channel');
+
+      await dbRun(
+        `insert or replace into servers
+         (server_id, server_name, default_channel_id)
+         values (?, ?, ?)`,
+        [guildId, interaction.guild.name, channel.id]
+      );
+
+      return interaction.reply(
+        `notifications set up in <#${channel.id}>`
+      );
+    }
+
+    if (!(await hasNotifPermission(interaction))) {
+      return interaction.reply({
+        content: 'you do not have permission to use this command',
+        ephemeral: true
+      });
+    }
+
+    /* list */
+    if (sub === 'list') {
+      const rows = await dbAll(
+        `select * from notifications where server_id = ?`,
+        [guildId]
+      );
+
+      if (!rows.length) {
+        return interaction.reply('no notifications configured');
+      }
+
+      return interaction.reply(
+        rows.map(n =>
+          [
+            `id ${n.id}`,
+            n.name ? `name: ${n.name}` : null,
+            n.type,
+            n.source,
+            n.enabled ? 'enabled' : 'disabled'
+          ].filter(Boolean).join(' | ')
+        ).join('\n')
+      );
+    }
+
+    /* test */
+    if (sub === 'test') {
+      const id = interaction.options.getInteger('id');
+      const channel = interaction.options.getChannel('channel');
+
+      const notif = await dbGet(
+        `select * from notifications where id = ? and server_id = ?`,
+        [id, guildId]
+      );
+
+      if (!notif) {
+        return interaction.reply('notification not found');
+      }
+
+      if (notif.type === 'twitch') {
+        await sendTwitchLiveEmbed(interaction.client, {
+          channelId: channel.id,
+          roleId: notif.role_id,
+          streamerName: notif.source,
+          streamTitle: 'test stream',
+          game: 'test game',
+          viewers: 0,
+          previewImage: 'https://static-cdn.jtvnw.net/previews-ttv/live_user_test-1280x720.jpg',
+          profileImage: null,
+          streamUrl: `https://twitch.tv/${notif.source}`
+        });
+      }
+
+      if (notif.type === 'youtube') {
+        await sendYouTubeUploadEmbed(interaction.client, {
+          channelId: channel.id,
+          roleId: notif.role_id,
+          title: 'test upload',
+          videoUrl: 'https://youtube.com',
+          thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg'
+        });
+      }
+
+      return interaction.reply('test embed sent');
+    }
+
+    return interaction.reply('unknown command');
+  }
+};
