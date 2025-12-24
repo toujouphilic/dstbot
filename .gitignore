@@ -1,0 +1,12 @@
+# dependencies
+node_modules/
+
+# environment variables
+.env
+
+# sqlite databases
+*.sqlite
+*.db
+
+# render disk (safety)
+data/
