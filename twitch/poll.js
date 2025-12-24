@@ -2,15 +2,7 @@ import fetch from 'node-fetch';
 import { db } from '../db/database.js';
 import { sendTwitchLiveEmbed } from '../notifier/discordNotifier.js';
 
-export async function pollTwitch(client) {
-  console.log('🔁 twitch poll tick');
-
-  const notifs = await dbAll(`
-    select * from notifications
-    where type = 'twitch' and enabled = 1
-  `);
-
-  console.log(`🎯 twitch notifs found: ${notifs.length}`);
+/* ================= SQLITE HELPERS ================= */
 
 function dbAll(sql, params = []) {
   return new Promise((resolve, reject) => {
@@ -24,6 +16,8 @@ function dbRun(sql, params = []) {
   });
 }
 
+/* ================= TWITCH AUTH ================= */
+
 let twitchToken = null;
 let tokenExpires = 0;
 
@@ -32,9 +26,9 @@ async function getTwitchToken() {
 
   const res = await fetch(
     `https://id.twitch.tv/oauth2/token` +
-    `?client_id=${process.env.TWITCH_CLIENT_ID}` +
-    `&client_secret=${process.env.TWITCH_CLIENT_SECRET}` +
-    `&grant_type=client_credentials`,
+      `?client_id=${process.env.TWITCH_CLIENT_ID}` +
+      `&client_secret=${process.env.TWITCH_CLIENT_SECRET}` +
+      `&grant_type=client_credentials`,
     { method: 'POST' }
   );
 
@@ -44,11 +38,11 @@ async function getTwitchToken() {
   return twitchToken;
 }
 
-async function checkStreamer(streamer) {
+async function checkStreamer(username) {
   const token = await getTwitchToken();
 
   const res = await fetch(
-    `https://api.twitch.tv/helix/streams?user_login=${streamer}`,
+    `https://api.twitch.tv/helix/streams?user_login=${username}`,
     {
       headers: {
         'Client-ID': process.env.TWITCH_CLIENT_ID,
@@ -61,11 +55,17 @@ async function checkStreamer(streamer) {
   return data.data?.[0] ?? null;
 }
 
+/* ================= POLLER ================= */
+
 export async function pollTwitch(client) {
+  console.log('🔁 twitch poll tick');
+
   const notifs = await dbAll(`
     select * from notifications
     where type = 'twitch' and enabled = 1
   `);
+
+  console.log(`🎯 twitch notifs found: ${notifs.length}`);
 
   for (const n of notifs) {
     try {
