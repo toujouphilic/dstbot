@@ -264,4 +264,4 @@ export default {
 
     return interaction.reply('unknown command');
   }
-};
+}; 
