@@ -131,21 +131,25 @@ export default {
       });
     }
 
-    /* IMPORTANT: prevent timeouts */
+    // prevent discord timeout
     await interaction.deferReply({ ephemeral: true });
 
     const sub = interaction.options.getSubcommand();
     const guildId = interaction.guildId;
 
-    /* admin-only role management */
+    // admin-only actions
     if (['addrole', 'removerole', 'reload'].includes(sub) &&
         !interaction.memberPermissions.has('Administrator')) {
-      return interaction.editReply('only administrators can manage notif roles');
+      return interaction.editReply(
+        'only administrators can manage notif roles'
+      );
     }
 
-    /* general permission check */
+    // permission check
     if (!(await hasNotifPermission(interaction))) {
-      return interaction.editReply('you do not have permission to use this command');
+      return interaction.editReply(
+        'you do not have permission to use this command'
+      );
     }
 
     /* reload */
@@ -184,7 +188,7 @@ export default {
       return interaction.editReply('notification setup complete');
     }
 
-    /* ensure server exists */
+    /* commands that require setup */
     db.get(
       `select server_id from servers where server_id = ?`,
       [guildId],
@@ -195,7 +199,6 @@ export default {
           );
         }
 
-        /* add */
         if (sub === 'add') {
           db.run(
             `insert into notifications
@@ -213,7 +216,6 @@ export default {
           return interaction.editReply('notification added');
         }
 
-        /* edit */
         if (sub === 'edit') {
           const id = interaction.options.getInteger('id');
           const channel = interaction.options.getChannel('channel');
@@ -244,9 +246,9 @@ export default {
               return interaction.editReply('notification updated');
             }
           );
+          return;
         }
 
-        /* enable / disable */
         if (sub === 'enable' || sub === 'disable') {
           db.run(
             `update notifications set enabled = ?
@@ -263,7 +265,6 @@ export default {
           );
         }
 
-        /* remove */
         if (sub === 'remove') {
           db.run(
             `delete from notifications where id = ? and server_id = ?`,
@@ -273,7 +274,6 @@ export default {
           return interaction.editReply('notification removed');
         }
 
-        /* list */
         if (sub === 'list') {
           db.all(
             `select * from notifications where server_id = ?`,
@@ -292,9 +292,9 @@ export default {
               interaction.editReply(lines.join('\n'));
             }
           );
+          return;
         }
 
-        /* addrole */
         if (sub === 'addrole') {
           const role = interaction.options.getRole('role');
 
@@ -309,7 +309,6 @@ export default {
           );
         }
 
-        /* removerole */
         if (sub === 'removerole') {
           const role = interaction.options.getRole('role');
 
@@ -322,6 +321,9 @@ export default {
             `role ${role.name} can no longer manage notif commands`
           );
         }
+
+        // required fallback to prevent infinite thinking
+        return interaction.editReply('unknown notif command');
       }
     );
   }
