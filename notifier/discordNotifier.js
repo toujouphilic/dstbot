@@ -1,8 +1,5 @@
 import { EmbedBuilder } from 'discord.js';
 
-/**
- * Send a Twitch live embed
- */
 export async function sendTwitchLiveEmbed(client, {
   channelId,
   roleId,
@@ -31,6 +28,7 @@ export async function sendTwitchLiveEmbed(client, {
       { name: 'Viewers', value: `${viewers ?? 0}`, inline: true }
     )
     .setImage(previewImage)
+    .setFooter({ text: 'Twitch' })
     .setTimestamp();
 
   await channel.send({
@@ -43,9 +41,6 @@ export async function sendTwitchLiveEmbed(client, {
   });
 }
 
-/**
- * Send a YouTube upload embed
- */
 export async function sendYouTubeUploadEmbed(client, {
   channelId,
   roleId,
