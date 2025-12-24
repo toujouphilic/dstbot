@@ -61,4 +61,8 @@ db.serialize(() => {
   tryAlter(`ALTER TABLE notifications ADD COLUMN name TEXT`);
   tryAlter(`ALTER TABLE notifications ADD COLUMN enabled INTEGER DEFAULT 1`);
   tryAlter(`ALTER TABLE notifications ADD COLUMN role_id TEXT`);
+  
+  // poll state tracking
+  tryAlter(`ALTER TABLE notifications ADD COLUMN last_state TEXT`);
+  tryAlter(`ALTER TABLE notifications ADD COLUMN last_checked INTEGER`);
 });
