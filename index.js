@@ -3,10 +3,9 @@ import express from 'express';
 import { Client, GatewayIntentBits, Collection } from 'discord.js';
 import notifCommand from './commands/notif.js';
 import './db/database.js';
-import {
-  subscribeAllYouTube,
-  handleYouTubeWebSub
-} from './youtube/websub.js';
+
+import { pollTwitch } from './twitch/poll.js';
+import { pollYouTube } from './youtube/poll.js';
 
 /* ================= DISCORD ================= */
 
@@ -20,18 +19,11 @@ client.commands.set('notif', notifCommand);
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  // Initial YouTube subscription
-  await subscribeAllYouTube(process.env.PUBLIC_BASE_URL);
+  // 🔁 Poll Twitch every 60s
+  setInterval(() => pollTwitch(client), 60 * 1000);
 
-  // 🔁 Auto-renew YouTube subscriptions every 24h
-  setInterval(async () => {
-    try {
-      console.log('🔁 Renewing YouTube WebSub subscriptions');
-      await subscribeAllYouTube(process.env.PUBLIC_BASE_URL);
-    } catch (err) {
-      console.error('❌ Failed to renew YouTube subscriptions', err);
-    }
-  }, 24 * 60 * 60 * 1000); // 24 hours
+  // 🔁 Poll YouTube every 3 min
+  setInterval(() => pollYouTube(client), 3 * 60 * 1000);
 });
 
 /* ================= COMMAND HANDLER ================= */
@@ -48,27 +40,19 @@ client.on('interactionCreate', async interaction => {
     console.error(err);
     if (!interaction.replied) {
       await interaction.reply({
-        content: '❌ Something went wrong.',
+        content: 'something went wrong',
         ephemeral: true
       });
     }
   }
 });
 
-/* ================= EXPRESS (WEBHOOKS) ================= */
+/* ================= EXPRESS ================= */
 
 const app = express();
 
-// YouTube WebSub requires raw body
-app.use('/youtube/websub', express.raw({ type: '*/*' }));
-
-// Health check (Render + UptimeRobot)
+// health check for render / uptime robot
 app.get('/', (req, res) => res.status(200).send('OK'));
-
-// YouTube WebSub endpoint (GET verification + POST notifications)
-app.all('/youtube/websub', (req, res) =>
-  handleYouTubeWebSub(req, res, client)
-);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
