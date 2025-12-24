@@ -153,4 +153,11 @@ export default {
             .setRequired(true)))
 
     .addSubcommand(s =>
-      s.setName('
+      s.setName('removerole')
+        .setDescription('remove a role from notif permissions')
+        .addRoleOption(o =>
+          o.setName('role')
+          .setDescription('role to remove')
+          .setRequired(true)
+      )
+)
