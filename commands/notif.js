@@ -39,6 +39,7 @@ export default {
     .setName('notif')
     .setDescription('manage notifications')
 
+    /* setup */
     .addSubcommand(s =>
       s.setName('setup')
         .setDescription('initialize notifications')
@@ -47,13 +48,18 @@ export default {
             .setDescription('default notification channel')
             .setRequired(true)))
 
+    /* help */
     .addSubcommand(s =>
       s.setName('help')
         .setDescription('show notif commands'))
 
+    /* add */
     .addSubcommand(s =>
       s.setName('add')
         .setDescription('add a notification')
+        .addStringOption(o =>
+          o.setName('name')
+            .setDescription('optional name for this notification'))
         .addStringOption(o =>
           o.setName('type')
             .setDescription('notification type')
@@ -68,16 +74,29 @@ export default {
             .setRequired(true))
         .addChannelOption(o =>
           o.setName('channel')
-            .setDescription('destination channel')
-            .setRequired(true))
+            .setDescription('optional override channel'))
         .addRoleOption(o =>
           o.setName('role')
             .setDescription('optional role ping')))
 
+    /* edit (name only) */
+    .addSubcommand(s =>
+      s.setName('edit')
+        .setDescription('edit a notification')
+        .addIntegerOption(o =>
+          o.setName('id')
+            .setDescription('notification id')
+            .setRequired(true))
+        .addStringOption(o =>
+          o.setName('name')
+            .setDescription('new name (leave empty to clear)')))
+
+    /* list */
     .addSubcommand(s =>
       s.setName('list')
         .setDescription('list notifications'))
 
+    /* enable */
     .addSubcommand(s =>
       s.setName('enable')
         .setDescription('enable a notification')
@@ -86,6 +105,7 @@ export default {
             .setDescription('notification id')
             .setRequired(true)))
 
+    /* disable */
     .addSubcommand(s =>
       s.setName('disable')
         .setDescription('disable a notification')
@@ -94,6 +114,7 @@ export default {
             .setDescription('notification id')
             .setRequired(true)))
 
+    /* remove */
     .addSubcommand(s =>
       s.setName('remove')
         .setDescription('remove a notification')
@@ -102,6 +123,7 @@ export default {
             .setDescription('notification id')
             .setRequired(true)))
 
+    /* role permissions */
     .addSubcommand(s =>
       s.setName('addrole')
         .setDescription('allow a role to manage notif commands')
@@ -129,9 +151,9 @@ export default {
     const sub = interaction.options.getSubcommand();
     const guildId = interaction.guildId;
 
-    /* setup is private */
+    /* setup (public) */
     if (sub === 'setup') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply();
 
       try {
         const channel = interaction.options.getChannel('channel');
@@ -143,16 +165,19 @@ export default {
           [guildId, interaction.guild?.name ?? 'unknown', channel.id]
         );
 
-        return interaction.editReply('notification setup complete');
+        return interaction.editReply(
+          `notification system set up. default channel is <#${channel.id}>`
+        );
       } catch (err) {
         console.error(err);
-        return interaction.editReply(
-          'an internal error occurred while running this command'
-        );
+        return interaction.followUp({
+          content: 'an internal error occurred while running this command',
+          ephemeral: true
+        });
       }
     }
 
-    /* everything else is public */
+    /* everything else */
     await interaction.deferReply();
 
     try {
@@ -163,10 +188,12 @@ export default {
         });
       }
 
+      /* help */
       if (sub === 'help') {
         return interaction.editReply(`
 /notif setup
 /notif add
+/notif edit
 /notif list
 /notif enable
 /notif disable
@@ -176,22 +203,85 @@ export default {
         `.trim());
       }
 
+      /* add */
       if (sub === 'add') {
+        const name = interaction.options.getString('name');
+        const type = interaction.options.getString('type');
+        const source = interaction.options.getString('from');
+        const role = interaction.options.getRole('role');
+        const overrideChannel = interaction.options.getChannel('channel');
+
+        const server = await dbGet(
+          `select default_channel_id from servers where server_id = ?`,
+          [guildId]
+        );
+
+        if (!server) {
+          return interaction.followUp({
+            content: 'this server is not set up yet. run /notif setup first',
+            ephemeral: true
+          });
+        }
+
+        const finalChannelId = overrideChannel?.id ?? server.default_channel_id;
+        const usedDefault = !overrideChannel;
+
         await dbRun(
           `insert into notifications
-           (server_id, type, source, channel_id, role_id)
-           values (?, ?, ?, ?, ?)`,
+           (server_id, name, type, source, channel_id, role_id)
+           values (?, ?, ?, ?, ?, ?)`,
           [
             guildId,
-            interaction.options.getString('type'),
-            interaction.options.getString('from'),
-            interaction.options.getChannel('channel').id,
-            interaction.options.getRole('role')?.id ?? null
+            name ?? null,
+            type,
+            source,
+            finalChannelId,
+            role?.id ?? null
           ]
         );
-        return interaction.editReply('notification added');
+
+        return interaction.editReply(
+          [
+            'notification added',
+            name ? `name: ${name}` : null,
+            `type: ${type}`,
+            `source: ${source}`,
+            `channel: <#${finalChannelId}>${usedDefault ? ' (default)' : ''}`,
+            role ? `ping: <@&${role.id}>` : 'ping: none'
+          ].filter(Boolean).join(' | ')
+        );
       }
 
+      /* edit name */
+      if (sub === 'edit') {
+        const id = interaction.options.getInteger('id');
+        const newName = interaction.options.getString('name');
+
+        const notif = await dbGet(
+          `select name from notifications where id = ? and server_id = ?`,
+          [id, guildId]
+        );
+
+        if (!notif) {
+          return interaction.editReply('notification not found');
+        }
+
+        await dbRun(
+          `update notifications set name = ? where id = ? and server_id = ?`,
+          [newName ?? null, id, guildId]
+        );
+
+        return interaction.editReply(
+          [
+            `notification updated`,
+            `id: ${id}`,
+            `old name: ${notif.name ?? 'none'}`,
+            `new name: ${newName ?? 'none'}`
+          ].join(' | ')
+        );
+      }
+
+      /* list */
       if (sub === 'list') {
         const rows = await dbAll(
           `select * from notifications where server_id = ?`,
@@ -204,11 +294,19 @@ export default {
 
         return interaction.editReply(
           rows.map(n =>
-            `id ${n.id} | ${n.type} | ${n.source} -> <#${n.channel_id}> | ${n.enabled ? 'enabled' : 'disabled'}`
+            [
+              `id ${n.id}`,
+              n.name ? `name: ${n.name}` : null,
+              n.type,
+              n.source,
+              `-> <#${n.channel_id}>`,
+              n.enabled ? 'enabled' : 'disabled'
+            ].filter(Boolean).join(' | ')
           ).join('\n')
         );
       }
 
+      /* enable / disable */
       if (sub === 'enable' || sub === 'disable') {
         await dbRun(
           `update notifications set enabled = ?
@@ -219,37 +317,46 @@ export default {
             guildId
           ]
         );
+
         return interaction.editReply(
           `notification ${sub === 'enable' ? 'enabled' : 'disabled'}`
         );
       }
 
+      /* remove */
       if (sub === 'remove') {
         await dbRun(
           `delete from notifications where id = ? and server_id = ?`,
           [interaction.options.getInteger('id'), guildId]
         );
+
         return interaction.editReply('notification removed');
       }
 
+      /* addrole */
       if (sub === 'addrole') {
         const role = interaction.options.getRole('role');
+
         await dbRun(
           `insert or ignore into notif_roles (server_id, role_id)
            values (?, ?)`,
           [guildId, role.id]
         );
+
         return interaction.editReply(
           `role ${role.name} can now manage notif commands`
         );
       }
 
+      /* removerole */
       if (sub === 'removerole') {
         const role = interaction.options.getRole('role');
+
         await dbRun(
           `delete from notif_roles where server_id = ? and role_id = ?`,
           [guildId, role.id]
         );
+
         return interaction.editReply(
           `role ${role.name} can no longer manage notif commands`
         );
